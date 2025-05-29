@@ -1355,6 +1355,16 @@ size_t dhcp_reply(struct dhcp_context *context, char *iface_name, int int_index,
 	    }
 	}
 
+      /* get options information                */
+      if (lease)
+      {
+          lease_add_fingerprint(lease, req_options);
+      }
+      else
+      {
+          my_syslog(LOG_INFO, "fingerprint: lease is null ");
+      }
+
       if (message)
 	{
 	  daemon->metrics[rapid_commit ? METRIC_NOANSWER : METRIC_DHCPNAK]++;

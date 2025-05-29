@@ -845,6 +845,7 @@ struct dhcp_lease {
   unsigned char *clid;   /* clientid */
   char *hostname, *fqdn; /* name from client-hostname option or config */
   char *old_hostname;    /* hostname before it moved to another lease */
+  char *fingerprint;
   int flags;
   time_t expires;        /* lease expiry */
 #ifdef HAVE_BROKEN_RTC
@@ -1621,6 +1622,7 @@ void lease_calc_fqdns(void);
 void lease_add_extradata(struct dhcp_lease *lease, unsigned char *data, 
 			 unsigned int len, int delim);
 #endif
+void lease_add_fingerprint(struct dhcp_lease *lease, unsigned char *req_options);
 #endif
 
 /* rfc2131.c */
