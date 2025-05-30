@@ -946,14 +946,14 @@ int main (int argc, char **argv)
   if (daemon->port != 0 && option_bool(OPT_NO_RESOLV))
     {
       if (daemon->resolv_files && !daemon->resolv_files->is_default)
-	my_syslog(LOG_WARNING, _("warning: ignoring resolv-file flag because no-resolv is set"));
+	my_syslog(LOG_WARNING, _("#### XDNS ##### dnsmasq.c: warning: ignoring resolv-file flag because no-resolv is set"));
       daemon->resolv_files = NULL;
       if (!daemon->servers)
-	my_syslog(LOG_WARNING, _("warning: no upstream servers configured"));
+	my_syslog(LOG_WARNING, _("#### XDNS ##### dnsmasq.c: warning: no upstream servers configured"));
     } 
 
   if (daemon->max_logs != 0)
-    my_syslog(LOG_INFO, _("asynchronous logging enabled, queue limit is %d messages"), daemon->max_logs);
+    my_syslog(LOG_INFO, _("#### XDNS ##### dnsmasq.c: asynchronous logging enabled, queue limit is %d messages"), daemon->max_logs);
   
 
 #ifdef HAVE_DHCP

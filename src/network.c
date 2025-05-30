@@ -1727,6 +1727,71 @@ void check_servers(int no_loop_check)
   build_server_array(); 
 }
 
+/* XDNS - Helper to create override server entries in record. Builds pprec list and returns the head. */
+static int create_dnsoverride_servers(struct dnsoverride_record **pprec, char* macaddr, char *srvaddr4, char *srvaddr6, char *cpetag)
+{
+       if(!macaddr || !srvaddr4) //MAC and Serv addr are must. cpetag is optional
+       {
+               my_syslog(LOG_ERR, _("### XDNS # parse error - mandatory fields (macaddr or ipv4addr) missing, skipping xdns entry !!"));
+               return 0; //fail
+       }
+#ifdef HAVE_IPV6
+       if(srvaddr6 == NULL)
+       {
+               my_syslog(LOG_ERR, _("### XDNS # parse error - ipv6 addr missing, skipping xdns entry !!"));
+               return 0; //fail
+       }
+
+#endif
+
+
+       my_syslog(LOG_ERR, _("### XDNS # macaddr : \"%s\""), macaddr);
+       my_syslog(LOG_ERR, _("### XDNS # srvaddr4 : \"%s\""), srvaddr4);
+#ifdef HAVE_IPV6
+       my_syslog(LOG_ERR, _("### XDNS # srvaddr6 : \"%s\""), srvaddr6);
+#endif
+
+       my_syslog(LOG_ERR, _("### XDNS # cpetag  : \"%s\""), cpetag);
+
+       //create entry and attach to record. This entries are maintained in arp.c. Cleanup is done there.
+       struct dnsoverride_record* entry = NULL;
+       if ((entry = whine_malloc(sizeof(struct dnsoverride_record))))
+       {
+               memset(entry, 0, sizeof(struct dnsoverride_record));
+
+               if(strlen(macaddr) < REC_ADDR_MAX)
+               {
+                       strcpy(entry->macaddr, macaddr);
+               }
+
+               if (inet_pton(AF_INET, srvaddr4, &entry->dnsaddr4.addr4) != 1)
+               {
+                       my_syslog(LOG_ERR, _("### XDNS # Error converting IP4 addr!"));
+                       free(entry);
+                       return 0;
+               }
+
+#ifdef HAVE_IPV6
+               if (inet_pton(AF_INET6, srvaddr6, &entry->dnsaddr6.addr6) != 1)
+               {
+                       my_syslog(LOG_ERR, _("### XDNS # Error converting IPv6 addr!"));
+                       free(entry);
+                       return 0;
+               }
+
+#endif
+               if(cpetag && strlen(cpetag) < REC_STR_MAX)
+               {
+                       strcpy(entry->cpetag, cpetag);
+               }
+
+
+               entry->next = *pprec;
+               *pprec = entry;
+       }
+       return 1; //success
+}
+
 /* Return zero if no servers found, in that case we keep polling.
    This is a protection against an update-time/write race on resolv.conf */
 int reload_servers(char *fname)
@@ -1734,12 +1799,18 @@ int reload_servers(char *fname)
   FILE *f;
   char *line;
   int gotone = 0;
+  /* XDNS - dns override servers record */
+  struct dnsoverride_record *prec = NULL;
 
   /* buff happens to be MAXDNAME long... */
   if (!(f = fopen(fname, "r")))
     {
       my_syslog(LOG_ERR, _("failed to read %s: %s"), fname, strerror(errno));
       return 0;
+    }
+  else
+    {
+      my_syslog(LOG_ERR, _("#############   XDNS : reload_servers()     read file :   %s    #############"), fname);
     }
    
   mark_servers(SERV_FROM_RESOLV);
@@ -1748,11 +1819,52 @@ int reload_servers(char *fname)
     {
       union mysockaddr addr, source_addr;
       char *token = strtok(line, " \t\n\r");
+      //my_syslog(LOG_ERR, _("### XDNS ### token : \"%s\""), token);
       
       if (!token)
 	continue;
-      if (strcmp(token, "nameserver") != 0 && strcmp(token, "server") != 0)
+      if (strcmp(token, "nameserver") != 0 && strcmp(token, "server") != 0 && strcmp(token, "dnsoverride") != 0)
 	continue;
+      /***************** <XDNS> case dnsoverride **********************/
+      if(strcmp(token, "dnsoverride") == 0)
+      {
+	      char *macaddr = NULL, *srvaddr4 = NULL, *cpetag = NULL;
+#ifdef HAVE_IPV6
+	      char *srvaddr6 = NULL;
+#endif
+	      if(!(macaddr = strtok(NULL, " \t\n\r")))
+	      {
+		      my_syslog(LOG_ERR, _("### XDNS # cannot read macaddr! fetch next dnsoverride entry."));
+
+		      continue; //fetch next record if macaddr not found
+	      }
+
+	      if(!(srvaddr4 = strtok(NULL, " \t\n\r")))
+	      {
+		      my_syslog(LOG_ERR, _("### XDNS # cannot read ip4 addr! fetch next dnsoverride entry."));
+		      continue; //fetch next record if server ip4 addr not found for mac
+	      }
+
+#ifdef HAVE_IPV6
+	      if(!(srvaddr6 = strtok(NULL, " \t\n\r")))
+	      {
+		      my_syslog(LOG_ERR, _("### XDNS # cannot read ip6 addr! fetch next dnsoverride entry."));
+		      continue; //fetch next record if server ip6 addr not found for mac
+	      }
+#endif
+	      cpetag = strtok(NULL, " \t\n\r"); //cpetag optional. proceed even if not found.
+
+	      // process dns override token. Build dnsoverride records.
+#ifdef HAVE_IPV6
+	      create_dnsoverride_servers(&prec, macaddr, srvaddr4, srvaddr6, cpetag);
+#else
+	      create_dnsoverride_servers(&prec, macaddr, srvaddr4, NULL, cpetag);
+#endif
+	      continue;
+
+      }
+               /***************** </XDNS> ***************************************/
+
       if (!(token = strtok(NULL, " \t\n\r")))
 	continue;
       
@@ -1800,7 +1912,9 @@ int reload_servers(char *fname)
       add_update_server(SERV_FROM_RESOLV, &addr, &source_addr, NULL, NULL, NULL);
       gotone = 1;
     }
-  
+  /* XDNS - Call to update the records in arp dnsoverride records*/
+  update_dnsoverride_records(prec);
+
   fclose(f);
   cleanup_servers();
 

@@ -192,6 +192,7 @@ struct myoption {
 #define LOPT_NO_DHCP4      383
 #define LOPT_MAX_PROCS     384
 #define LOPT_DNSSEC_LIMITS 385
+#define LOPT_DNSOVERRIDE   362
 
 #ifdef HAVE_GETOPT_LONG
 static const struct option opts[] =  
@@ -236,6 +237,7 @@ static const struct myoption opts[] =
     { "strict-order", 0, 0, 'o' },
     { "server", 1, 0, 'S' },
     { "rev-server", 1, 0, LOPT_REV_SERV },
+    { "dnsoverride", 2, 0, LOPT_DNSOVERRIDE },
     { "local", 1, 0, LOPT_LOCAL },
     { "address", 1, 0, 'A' },
     { "conf-file", 2, 0, 'C' },
@@ -2027,6 +2029,9 @@ static int one_opt(int option, char *arg, char *errstr, char *gen_err, int comma
     case 'C': /* --conf-file */
       {
 	char *file = opt_string_alloc(arg);
+
+       //my_syslog(LOG_WARNING, _("#### XDNS #### option.c - case --conf-file: %s"), file);
+
 	if (file)
 	  {
 	    one_file(file, 0);
@@ -5373,7 +5378,8 @@ static void read_file(char *file, FILE *f, int hard_opt, int from_script)
 {
   volatile int lineno = 0;
   char *buff = daemon->namebuff;
-  
+  //my_syslog(LOG_WARNING, _("#### XDNS #### option.c-read_file() start"));
+
   while (fgets(buff, MAXDNAME, f))
     {
       int white, i;
@@ -5509,6 +5515,8 @@ static void read_file(char *file, FILE *f, int hard_opt, int from_script)
     }
 
   mem_recover = 0;
+  //my_syslog(LOG_WARNING, _("#### XDNS #### option.c-read_file() end"));
+
 }
 
 #if defined(HAVE_DHCP) && defined(HAVE_INOTIFY)
@@ -5747,6 +5755,8 @@ void read_servers_file(void)
 {
   FILE *f;
 
+  // my_syslog(LOG_WARNING, _("#### XDNS #### option.c-read_servers_file(): %s"), daemon->servers_file);
+
   if (!(f = fopen(daemon->servers_file, "r")))
     {
        my_syslog(LOG_ERR, _("cannot read %s: %s"), daemon->servers_file, strerror(errno));
@@ -5757,6 +5767,7 @@ void read_servers_file(void)
   read_file(daemon->servers_file, f, LOPT_REV_SERV, 0);
   fclose(f);
   cleanup_servers();
+  //my_syslog(LOG_WARNING, _("#### XDNS #### option.c-read_servers_file() calling read_file()"));
   check_servers(0);
 }
  

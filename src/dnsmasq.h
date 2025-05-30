@@ -282,7 +282,10 @@ struct event_desc {
 #define OPT_NO_IDENT       70
 #define OPT_CACHE_RR       71
 #define OPT_LOCALHOST_SERVICE  72
-#define OPT_LAST           73
+/* <XDNS> */
+#define OPT_DNS_OVERRIDE   73
+/* </XDNS> */
+#define OPT_LAST           74
 
 #define OPTION_BITS (sizeof(unsigned int)*8)
 #define OPTION_SIZE ( (OPT_LAST/OPTION_BITS)+((OPT_LAST%OPTION_BITS)!=0) )
@@ -542,6 +545,22 @@ union mysockaddr {
   struct sockaddr_in6 in6;
 };
 
+/* for XDNS feature */
+#define REC_ADDR_MAX 32  /* Max buffer size MAC or IPv4 */
+#define REC_STR_MAX 256  /* Max string size cpetag */
+
+/* XDNS - mapping of client hwaddr to upstream dns servers */
+struct dnsoverride_record {
+  unsigned char macaddr[REC_ADDR_MAX];
+  char cpetag[REC_STR_MAX];
+  union all_addr dnsaddr4;
+#ifdef HAVE_IPV6
+  union all_addr dnsaddr6;
+#endif
+  //int family;
+  struct dnsoverride_record *next;
+};
+
 /* bits in flag param to IPv6 callbacks from iface_enumerate() */
 #define IFACE_TENTATIVE   1
 #define IFACE_DEPRECATED  2
@@ -788,6 +807,7 @@ struct frec {
   } frec_src;
   struct server *sentto; /* NULL means free */
   struct randfd_list *rfds;
+  struct randfd *rfd4;
   unsigned short new_id;
   int forwardall, flags;
   time_t time;
@@ -1147,6 +1167,7 @@ extern struct daemon {
      in option.c */
 
   unsigned int options[OPTION_SIZE];
+  struct randfd *rfd_save;
   struct resolvc default_resolv, *resolv_files;
   time_t last_resolv;
   char *servers_file;
@@ -1176,6 +1197,7 @@ extern struct daemon {
   struct iname *if_names, *if_addrs, *if_except, *dhcp_except, *auth_peers, *tftp_interfaces;
   struct bogus_addr *bogus_addr, *ignore_addr;
   struct server *servers, *servers_tail, *local_domains, **serverarray;
+  struct server *dns_override_server; /* for XDNS */
   struct rebind_domain *no_rebind;
   int server_has_wildcard;
   int serverarraysz, serverarrayhwm;
@@ -1874,6 +1896,11 @@ int check_source(struct dns_header *header, size_t plen, unsigned char *pseudohe
 
 /* arp.c */
 int find_mac(union mysockaddr *addr, unsigned char *mac, int lazy, time_t now);
+int update_dnsoverride_records(struct dnsoverride_record *precord);
+struct dnsoverride_record* get_dnsoverride_record(char* macaddr);
+struct dnsoverride_record* get_dnsoverride_defaultrecord();
+int find_dnsoverride_server(char* macaddr, union all_addr* serv, int iptype);
+int find_dnsoverride_defaultserver(union all_addr* serv, int iptype);
 int do_arp_script_run(void);
 
 /* dump.c */

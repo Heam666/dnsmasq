@@ -261,6 +261,54 @@ static void encoder(unsigned char *in, char *out)
   out[3] = char64(in[2]);
 }
 
+/* XDNS - Add cpe tag for XDNS if found */
+static size_t add_cpe_tag(struct dns_header *header, size_t plen, unsigned char *limit, union mysockaddr *l3, time_t now)
+{
+       unsigned char mac[DHCP_CHADDR_MAX] = {0};
+       int maclen = 0;
+       char strmac[REC_ADDR_MAX] = {0};
+       memset(strmac, 0, REC_ADDR_MAX);
+
+       struct dnsoverride_record* dnsrec = NULL;
+       unsigned char* cpetag = NULL;
+
+       if ((maclen = find_mac(l3, mac, 1, now)) != 0)
+       {
+               print_mac(strmac, mac, maclen);
+
+               dnsrec = get_dnsoverride_record(strmac);
+               if(!dnsrec)
+                       dnsrec = get_dnsoverride_defaultrecord();
+
+               if(dnsrec && dnsrec->cpetag[0])
+               {
+                       //my_syslog(LOG_WARNING, _("#### XDNS add_cpe_tag() - found cpetag: %s"), dnsrec->cpetag);
+                       cpetag = dnsrec->cpetag;
+               }
+               else
+               {
+                       my_syslog(LOG_WARNING, _("#### XDNS add_cpe_tag() Could not find cpetag for mac %s"), strmac);
+               }
+       }
+
+       //if cpetag not found try to use the one from dnsmasq options
+       if(cpetag == NULL)
+       {
+               cpetag = (unsigned char *)daemon->dns_client_id;
+       }
+
+       // if no cpetag found return. Don't call add header.
+       if(cpetag == NULL)
+       {
+               my_syslog(LOG_WARNING, _("#### XDNS : no cpetag found in dnsmasq config"));
+               return plen;
+       }
+
+       my_syslog(LOG_WARNING, _("### XDNS - add cpe tag \'%s\' to edns0 header for mac [%s]"), cpetag, strmac);
+       return add_pseudoheader(header, plen, limit, PACKETSZ, EDNS0_OPTION_NOMCPEID, cpetag, strlen(cpetag), 0, 1);
+}
+//</XDNS>
+
 /* OPT_ADD_MAC = MAC is added (if available)
    OPT_ADD_MAC + OPT_STRIP_MAC = MAC is replaced, if not available, it is only removed
    OPT_STRIP_MAC = MAC is removed */
@@ -295,6 +343,124 @@ static size_t add_dns_client(struct dns_header *header, size_t plen, unsigned ch
   return plen;
 }
 
+// XDNS
+void set_option_dnsoverride()
+{
+  if (OPT_DNS_OVERRIDE < 32)
+    daemon->options[0] |= 1u << OPT_DNS_OVERRIDE;
+  else
+    daemon->options[1] |= 1u << (OPT_DNS_OVERRIDE - 32);
+}
+
+// XDNS
+void reset_option_dnsoverride()
+{
+  if (OPT_DNS_OVERRIDE < 32)
+    daemon->options[0] &= ~(1u << OPT_DNS_OVERRIDE);
+  else
+    daemon->options[1] &= ~(1u << (OPT_DNS_OVERRIDE - 32));
+}
+
+// XDNS
+static size_t add_xdns_server(struct dns_header *header, size_t plen, unsigned char *limit, union mysockaddr *l3, time_t now)
+{
+   int maclen = 0;
+   unsigned char mac[DHCP_CHADDR_MAX];
+
+       // find mac from socket addr
+   if ((maclen = find_mac(l3, mac, 1, now)) != 0)
+   {
+       // get mac in string format
+       char strmac[REC_ADDR_MAX] = {0};
+       memset(strmac, 0, REC_ADDR_MAX);
+       print_mac(strmac, mac, maclen);
+
+               my_syslog(LOG_INFO, _("### XDNS - add_xdns_server() for mac [%s]"), strmac);
+
+               // find family type from socket addr
+               int iptype = 4;
+               if(l3->sa.sa_family == AF_INET)
+               {
+                       iptype = 4;
+               }
+#ifdef HAVE_IPV6
+               else if(l3->sa.sa_family == AF_INET6)
+               {
+                       iptype = 6;
+               }
+#endif
+
+               // get appropriate ipv4 or ipv6 dnsoverride address using mac addr
+               union all_addr dnsaddr;
+               memset(&dnsaddr, 0, sizeof(union all_addr));
+
+               struct server *serv = NULL;
+
+               // if xdns addr for same iptype, if not found try for other iptype
+               // then try the default.
+               if(!find_dnsoverride_server(strmac, &dnsaddr, iptype))
+               {
+                      if(find_dnsoverride_server(strmac, &dnsaddr, (iptype==4)?6:4))//try other type
+                      {
+                             iptype = (iptype==4)?6:4;
+                      }
+                      else if(!find_dnsoverride_defaultserver(&dnsaddr, iptype))
+                      {
+                            if(find_dnsoverride_defaultserver(&dnsaddr, (iptype==4)?6:4))//try other type
+                            {
+                                   iptype = (iptype==4)?6:4;
+                            }
+                            else
+                            {
+                                   my_syslog(LOG_WARNING, _("#### XDNS : add_xdns_server() Could't find xdns server for [%s] or the default server!"), strmac);
+                                   reset_option_dnsoverride();
+                                   return plen;
+                            }
+                      }
+               }
+               //else found xdns server to use.
+
+               serv = daemon->dns_override_server;
+               if(!serv) // if first time, daemon->dns_override_server is NULL. Allocate
+               {
+                      serv = whine_malloc(sizeof (struct server)); //allocated once & reused. Not freed.
+                      if(serv)
+                      {
+                            memset(serv, 0, sizeof(struct server));
+                      }
+                      daemon->dns_override_server = serv;
+               }
+
+               if(serv)
+               {
+                       if(iptype == 4)
+                       {
+                               my_syslog(LOG_WARNING, _("### XDNS - set ipv4 dns_override_server entry in daemon"));
+                              //serv->addr.in.sin_addr = dnsaddr.addr4;
+                               memcpy(&serv->addr.in.sin_addr, &dnsaddr.addr4, sizeof(struct in_addr));
+                               serv->addr.sa.sa_family = AF_INET;
+                       }
+#ifdef HAVE_IPV6
+                       else if(iptype == 6)
+                       {
+                               my_syslog(LOG_WARNING, _("### XDNS - set ipv6 dns_override_server entry in daemon"));
+                               //serv->addr.in6.sin6_addr = dnsaddr.addr6;
+                               memcpy(&serv->addr.in6.sin6_addr, &dnsaddr.addr6, sizeof(struct in6_addr));
+                               serv->addr.sa.sa_family = AF_INET6;
+                       }
+#endif
+                   // Trigger overriding of upstream server
+                   set_option_dnsoverride();
+                }
+    }
+       else
+       {
+               reset_option_dnsoverride();
+               my_syslog(LOG_WARNING, _("#### XDNS : could not find MAC from l3 sockaddr !"));
+       }
+
+       return plen;
+}
 
 /* OPT_ADD_MAC = MAC is added (if available)
    OPT_ADD_MAC + OPT_STRIP_MAC = MAC is replaced, if not available, it is only removed
@@ -302,6 +468,7 @@ static size_t add_dns_client(struct dns_header *header, size_t plen, unsigned ch
 static size_t add_mac(struct dns_header *header, size_t plen, unsigned char *limit,
 		      union mysockaddr *l3, time_t now, int *cacheablep)
 {
+  my_syslog(LOG_WARNING, _("#### XDNS : add_mac() called"));
   int maclen = 0, replace = 0;
   unsigned char mac[DHCP_CHADDR_MAX];
     
@@ -316,6 +483,11 @@ static size_t add_mac(struct dns_header *header, size_t plen, unsigned char *lim
   
   if (replace != 0 || maclen != 0)
     plen = add_pseudoheader(header, plen, limit, PACKETSZ, EDNS0_OPTION_MAC, mac, maclen, 0, replace);
+  else
+  {
+	  my_syslog(LOG_WARNING, _("#### XDNS : add_mac() maclen = 0 !!"));
+	  reset_option_dnsoverride();
+  }
 
   return plen; 
 }
@@ -529,9 +701,15 @@ size_t add_edns0_config(struct dns_header *header, size_t plen, unsigned char *l
   plen  = add_mac(header, plen, limit, source, now, cacheable);
   plen = add_dns_client(header, plen, limit, source, now, cacheable);
   
-  if (daemon->dns_client_id)
-    plen = add_pseudoheader(header, plen, limit, PACKETSZ, EDNS0_OPTION_NOMCPEID, 
-			    (unsigned char *)daemon->dns_client_id, strlen(daemon->dns_client_id), 0, 1);
+  /* <XDNS> */
+  plen = add_xdns_server(header, plen, limit, source, now);
+
+  //if (daemon->dns_client_id)
+   // plen = add_pseudoheader(header, plen, limit, PACKETSZ, EDNS0_OPTION_NOMCPEID, 
+     //			    (unsigned char *)daemon->dns_client_id, strlen(daemon->dns_client_id), 0, 1);
+
+  plen = add_cpe_tag(header, plen, limit, source, now);
+  /* </XDNS> */
 
   if (option_bool(OPT_UMBRELLA))
     plen = add_umbrella_opt(header, plen, limit, source, cacheable);

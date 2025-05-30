@@ -494,6 +494,34 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
   while (1)
     { 
       int fd;
+      // < XDNS for IPv6>
+      if(option_bool(OPT_DNS_OVERRIDE) && daemon->dns_override_server)
+      {
+	      my_syslog(LOG_INFO, _("#### XDNS - finding server socket to use based on dns_override_server family "));
+#ifdef HAVE_IPV6
+	      if (daemon->dns_override_server->addr.sa.sa_family == AF_INET6)
+	      {
+		      my_syslog(LOG_INFO, _("#### XDNS - AF_INET6 family"));
+		      if (!forward->rfd6 &&
+				      !(forward->rfd6 = allocate_rfd(AF_INET6)))
+			      break;
+		      daemon->rfd_save = forward->rfd6;
+		      fd = forward->rfd6->fd;
+		      my_syslog(LOG_INFO, _("#### XDNS - found IP6 fd to use: %d "), fd);
+	      }
+#endif
+#ifdef HAVE_CONNTRACK
+	      /* Copy connection mark of incoming query to outgoing connection. */
+	      if (option_bool(OPT_CONNTRACK))
+	      {
+		      unsigned int mark;
+		      if (get_incoming_mark(&forward->source, &forward->dest, 0, &mark))
+			      setsockopt(fd, SOL_SOCKET, SO_MARK, &mark, sizeof(unsigned int));
+	      }
+#endif
+      }
+//</ XDNS for IPv6>
+
       struct server *srv = daemon->serverarray[start];
       
       if ((fd = allocate_rfd(&forward->rfds, srv)) != -1)
@@ -520,13 +548,90 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
 		PUTSHORT(srv->edns_pktsz, pheader);
 	    }
 #endif
+	  //<XDNS>
+                       //=====
+                 //my_syslog(LOG_INFO, _("#### XDNS - List of nameservers: "));
+                        struct server *indx;
+                for (indx = daemon->servers; indx; indx = indx->next)
+                {
+                         char strprn[64] = {0}; memset(strprn, 0, 64);
+                         if(indx->addr.sa.sa_family == AF_INET)
+                         {
+                                 inet_ntop(AF_INET, &(indx->addr.in.sin_addr), strprn, 64);
+                                 //my_syslog(LOG_INFO, _("            [%s]     port: 0x%x family: %d"), strprn, indx->addr.in.sin_port, indx->addr.in.sin_family);
+
+                        }
+                         else if(indx->addr.sa.sa_family == AF_INET6)
+                         {
+                                 inet_ntop(AF_INET6, &(indx->addr.in6.sin6_addr), strprn, 64);
+                                 //my_syslog(LOG_INFO, _("            [%s]     port: 0x%x family: %d"), strprn, indx->addr.in6.sin6_port, indx->addr.in6.sin6_family);
+                         }
+                 }
+
+
+                       if(option_bool(OPT_DNS_OVERRIDE) && daemon->dns_override_server)
+                       {
+                         char strprn[64] = {0};
+                         if(daemon->dns_override_server->addr.sa.sa_family == AF_INET)
+                         {
+                                 memset(strprn, 0, 64);
+                                 if(inet_ntop(AF_INET, &(daemon->dns_override_server->addr.in.sin_addr), strprn, 64))
+                                 {
+                                         if(strprn[0] != 0 && strcmp(strprn, "0.0.0.0") != 0)
+                                         {
+                                                 memcpy(&srv->addr.in.sin_addr, &daemon->dns_override_server->addr.in.sin_addr, sizeof(struct in_addr));
+                                                 srv->addr.in.sin_family = AF_INET;
+                                                 //my_syslog(LOG_WARNING, _("#### XDNS - Overriding upstream address with IPv4 xDNS addr"));
+                                         }
+                                 }
+                         }
+                         else if(daemon->dns_override_server->addr.sa.sa_family == AF_INET6)
+                         {
+                                 memset(strprn, 0, 64);
+                                 if(inet_ntop(AF_INET6, &(daemon->dns_override_server->addr.in6.sin6_addr), strprn, 64))
+                                 {
+                                         if(strprn[0] != 0 && strcmp(strprn, "::") != 0)
+                                         {
+                                                 memcpy(&srv->addr.in6.sin6_addr, &daemon->dns_override_server->addr.in6.sin6_addr, sizeof(struct in6_addr));
+                                                 srv->addr.in6.sin6_family = AF_INET6;
+                                                 //my_syslog(LOG_WARNING, _("#### XDNS - Overriding upstream address with IPv6 xDNS addr"));
+                                         }
+                                 }
+                         }
+                         else
+                         {
+                                 my_syslog(LOG_WARNING, _("#### XDNS - dns_override_server family error!!"));
+                         }
+                       }
+                       else
+                       {
+                         //my_syslog(LOG_WARNING, _("#### XDNS - Did not modify upstream addr!"));
+                       }
+                 // Print where udp send is sending to:
+                 char strprn[64] = {0}; memset(strprn, 0, 64);
+                 if(srv->addr.sa.sa_family == AF_INET)
+                         inet_ntop(AF_INET, &(srv->addr.in.sin_addr), strprn, 64);
+                 else if(srv->addr.sa.sa_family == AF_INET6)
+                         inet_ntop(AF_INET6, &(srv->addr.in6.sin6_addr), strprn, 64);
+						 my_syslog(LOG_INFO, _("#### XDNS - sendto (%u, 0x%x, len = %d) to %s : %s)"),
+                                 fd,
+                                 (int)&srv->addr.sa,
+                                 sa_len(&srv->addr),
+                                 (srv->addr.sa.sa_family == AF_INET6)?"ipv6":"ipv4", strprn);
+
+                 //=====
+                 // </XDNS>
+
 	  
 	  if (retry_send(sendto(fd, (char *)header, plen, 0,
-				&srv->addr.sa,
-				sa_len(&srv->addr))))
-	    continue;
+					  (const struct sockaddr *)&srv->addr.sa,
+					  (socklen_t)sa_len(&srv->addr))))
+	  {
+		  my_syslog(LOG_WARNING, _("#### XDNS : retry_send() retry..."));
+		  continue;
+	  }
 	  
-	  if (errno == 0)
+	  if (errno == 0) //succeeded
 	    {
 #ifdef HAVE_DUMPFILE
 	      dump_packet_udp(DUMP_UP_QUERY, (void *)header, plen, NULL, &srv->addr, fd);
@@ -557,6 +662,10 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
 		break;
 	      forward->forwardall++;
 	    }
+	  else
+	  {
+		  my_syslog(LOG_WARNING, _("#### XDNS : sendto() failed!"));
+	  }
 	}
       
       if (++start == last)

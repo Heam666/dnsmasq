@@ -35,6 +35,11 @@ struct arp_record {
 static struct arp_record *arps = NULL, *old = NULL, *freelist = NULL;
 static time_t last = 0;
 
+/* <XDNS> */
+#define XDNS_NULL_MAC "00:00:00:00:00:00"
+static struct dnsoverride_record *dnsrecs = NULL;
+/* </XDNS> */
+
 static int filter_mac(int family, char *addrp, char *mac, size_t maclen, void *parmv)
 {
   struct arp_record *arp;
@@ -198,6 +203,147 @@ int find_mac(union mysockaddr *addr, unsigned char *mac, int lazy, time_t now)
 	  
    return 0;
 }
+
+/* <XDNS> - update_dnsoverride_records updates dnsoverride_record. */
+int update_dnsoverride_records(struct dnsoverride_record *precord)
+{
+       struct dnsoverride_record *tmp = dnsrecs;
+
+       //lock - no need. dnsmasq is single threaded
+       dnsrecs = precord;
+       //unlock
+
+       /* clean old records */
+       while(tmp)
+       {
+               struct dnsoverride_record *t = tmp;
+               tmp = tmp->next;
+               free(t);
+       }
+       return 1;//success
+}
+
+/* XDNS find dns record for given mac in dnsrecs. */
+struct dnsoverride_record* get_dnsoverride_record(char* macaddr)
+{
+       if(!macaddr)
+       {
+               my_syslog(LOG_WARNING, _("#### XDNS : get_dnsoverride_record(%s) Error Param!!"), macaddr);
+               return NULL;
+       }
+
+       //my_syslog(LOG_WARNING, _("#### XDNS : get_dnsoverride_record(%s)"), macaddr);
+
+       //lock - no need. dnsmasq is single threaded
+       struct dnsoverride_record *p = dnsrecs;
+       while(p)
+       {
+               if(strcmp(p->macaddr, macaddr) == 0)
+               {
+                       //found
+                       //my_syslog(LOG_WARNING, _("#### XDNS : get_dnsoverride_record(%s) - found."), macaddr);
+                       break;
+               }
+               p = p->next;
+       }
+       //unlock
+
+       if(!p)
+       {
+               my_syslog(LOG_WARNING, _("#### XDNS : get_dnsoverride_record(%s) Not found!"), macaddr);
+       }
+
+       return p;
+}
+
+/* XDNS - get default record*/
+struct dnsoverride_record* get_dnsoverride_defaultrecord()
+{
+       //lock
+       struct dnsoverride_record *p = dnsrecs;
+       while(p)
+       {
+               if(strcmp(p->macaddr, XDNS_NULL_MAC) == 0)
+               {
+                       //found
+                       my_syslog(LOG_WARNING, _("#### XDNS : found default rec"));
+                       break;
+               }
+               p = p->next;
+       }
+       //unlock
+
+       if(!p)
+       {
+               my_syslog(LOG_WARNING, _("#### XDNS : get_dnsoverride_defaultrecord() Not found!"));
+       }
+
+       return p;
+}
+
+
+/* find dns server address for given mac in dnsrecs */
+int find_dnsoverride_server(char* macaddr, union all_addr* serv, int iptype)
+{
+       if(!macaddr || !serv)
+       {
+               my_syslog(LOG_WARNING, _("#### XDNS : find_dnsoverride_server() Error Param!!"));
+               return 0; //fail
+       }
+
+       //my_syslog(LOG_WARNING, _("#### XDNS : find_dnsoverride_server(%s)"), macaddr);
+
+       //lock - No need. dnsmasq is single threaded
+       struct dnsoverride_record *p = dnsrecs;
+       while(p)
+       {
+               if(strcmp(p->macaddr, macaddr) == 0)
+               {
+                       //found
+                       if(iptype == 4)
+                       {
+                               memcpy(serv, &p->dnsaddr4, sizeof(union all_addr));
+                               my_syslog(LOG_WARNING, _("#### XDNS : found ipv4 server"));
+                       }
+#ifdef HAVE_IPV6
+                       else if(iptype == 6)
+                       {
+                               memcpy(serv, &p->dnsaddr6, sizeof(union all_addr));
+                               my_syslog(LOG_WARNING, _("#### XDNS : found ipv6 server"));
+                       }
+#endif
+                       else
+                       {
+                               my_syslog(LOG_WARNING, _("#### XDNS : find_dnsoverride_server() Error Param! invalid iptype: %d !"), iptype);
+                               return 0; // fail
+                       }
+
+                       return 1; //success
+
+               }
+               p = p->next;
+       }
+       //unlock
+
+       my_syslog(LOG_WARNING, _("#### XDNS : find_dnsoverride_server(%s) override dns server not found!"), macaddr);
+
+       return 0; // not found
+}
+
+/* find default server address. Default is indicated by mac addr "00:00:00:00:00:00" TODO: Needs protection */
+int find_dnsoverride_defaultserver(union all_addr* serv, int iptype)
+{
+       if(!serv)
+       {
+               my_syslog(LOG_WARNING, _("#### XDNS : find_dnsoverride_defaultserver(%x) Error Param!!"), serv);
+               return 0;
+       }
+
+       return find_dnsoverride_server(XDNS_NULL_MAC, serv, iptype);
+}
+
+/* </XDNS> */
+
 
 int do_arp_script_run(void)
 {
