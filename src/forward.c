@@ -1622,6 +1622,21 @@ static void return_reply(time_t now, struct frec *forward, struct dns_header *he
   if ((header->hb4 & HB4_CD) || (forward->flags & FREC_CHECKING_DISABLED))
     no_cache_dnssec = 1;
 
+                      /* If the nameserver responds with SERVFAIL or REFUSED, the query is recreated from
+                         reply and send to next available nameserver in /etc/resolv.conf */
+                      if ((RCODE(header) == SERVFAIL) || (RCODE(header) == REFUSED))
+                      {
+                          close(last_server->tcpfd);
+                          header->hb3 &= ~(HB3_QR | HB3_AA | HB3_TC);
+                          header->hb4 &= ~(HB4_RA | HB4_RCODE | HB4_CD | HB4_AD);
+                          if (checking_disabled)
+                              header->hb4 |= HB4_CD;
+                          if (ad_reqd)
+                              header->hb4 |= HB4_AD;
+
+                          last_server->tcpfd = -1;
+                          continue;
+                      }
 #ifdef HAVE_DNSSEC
   if (!STAT_ISEQUAL(status, STAT_OK))
     {
@@ -2821,6 +2836,14 @@ unsigned char *tcp_request(int confd, time_t now,
       check_log_writer(1);
       
       *length = htons(m);
+ 
+      /* If tcp connection to fallback nameserver fails then send SERVFAIL
+       * response received from earlier nameserver to client. */
+      if (((header->hb3 & HB3_QR) >> 7) == 0)
+      {
+	      header->hb3 = HB3_QR | HB3_RD;
+	      header->hb4 = HB4_RA | SERVFAIL;
+      }
       
 #if defined(HAVE_CONNTRACK) && defined(HAVE_UBUS)
 #ifdef HAVE_AUTH
