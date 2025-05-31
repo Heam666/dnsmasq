@@ -1985,6 +1985,12 @@ static void check_dns_listeners(time_t now)
 		  if (daemon->metrics[METRIC_TCP_CONNECTIONS] > daemon->max_procs_used)
 		    daemon->max_procs_used = daemon->metrics[METRIC_TCP_CONNECTIONS];
 		}
+             /* In problem case we are seeing PARENT and CHILD processes are getting accessing the common resource
+              * That causing to Child process to die with may be SIGPIPE, which is ignored by parent causing the child
+              * proces to get into Zombie. To mitigate this problem we are introducing 100ms delay in parent process.
+              * For the actual fix, we are going to introduce proper locking mechanism for common resources. */
+	      my_syslog(LOG_INFO,"%s:%d Sleeping in parent for pid %d",__FUNCTION__,__LINE__,p);
+              usleep(100000);
 	      close(confd);
 
 	      /* The child can use up to TCP_MAX_QUERIES ids, so skip that many. */
