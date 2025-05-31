@@ -355,7 +355,7 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
 
       if (!option_bool(OPT_ORDER))
 	{
-	  if (master->forwardcount++ > FORWARD_TEST ||
+	  if (master->forwardcount > FORWARD_TEST ||
 	      difftime(now, master->forwardtime) > FORWARD_TIME ||
 	      master->last_server == -1)
 	    {
@@ -937,10 +937,77 @@ static size_t process_reply(struct dns_header *header, time_t now, struct server
                 temp_server_lists=temp_server_lists->next;
 
           }
-        start = daemon->servers;
-        firstsentto = start;
+        //start = daemon->servers;
+        //firstsentto = start;
         //forward->forwardall = 1;
 
+         if (type == 0)
+         {
+              //my_syslog(LOG_ERR, _("### XDNS # - inside if (type == 0) - type:%d daemon->forwardcount_server4:%d, daemon->forwardcount_server6:%d, now:%d, daemon->forwardtime:%d, difftime(now, daemon->forwardtime):%0.2f "), type, daemon->forwardcount_server4, daemon->forwardcount_server6, now, daemon->forwardtime, difftime(now, daemon->forwardtime));
+              if (option_bool(OPT_ORDER))
+                       start = daemon->servers;
+              else if ((!daemon->last_server) && (!daemon->last_good_serverv4 || !daemon->last_good_serverv6) ||
+                       daemon->forwardcount_server4++ > FORWARD_TEST || daemon->forwardcount_server6++ > FORWARD_TEST ||
+                       difftime(now, daemon->forwardtime) > FORWARD_TIME || difftime(now, daemon->forwardtime) == 0 )              
+              {
+                       start = daemon->servers;
+                       forward->forwardall = 1;
+                       daemon->forwardcount_server4 = 0;
+                       daemon->forwardcount_server6 = 0;
+                       daemon->forwardtime = now;
+                       daemon->last_good_serverv4 = NULL;
+                       daemon->last_good_serverv6 = NULL;
+                       //my_syslog(LOG_ERR, _("### XDNS # - inside elseif - type:%d, daemon->forwardcount_server4:%d, daemon->forwardcount_server6:%d, now:%d, daemon->forwardtime:%d, difftime(now, daemon->forwardtime):%0.2f "), type, daemon->forwardcount_server4, daemon->forwardcount_server6, now, daemon->forwardtime, difftime(now, daemon->forwardtime));
+              }
+              else if (daemon->last_server && (daemon->last_good_serverv4 || daemon->last_good_serverv6) && (difftime(now, daemon->forwardtime) < FORWARD_TIME)) 
+              {
+                   char strprn[64] = {0}; memset(strprn, 0, 64);
+                   if ( daemon->ip_type == 4 && daemon->last_good_serverv4)
+                   {
+                           start = daemon->last_good_serverv4;
+                           forward->forwardall = 0;
+                           inet_ntop(AF_INET, &(start->addr.in.sin_addr), strprn, 64);
+                           my_syslog(LOG_WARNING, _("            [%s]     port: 0x%x, family: %d"), strprn, start->addr.in.sin_port,start->addr.in.sin_family);
+                   }
+                   else if ( daemon->ip_type == 6 && daemon->last_good_serverv6)
+                   {
+                           start = daemon->last_good_serverv6;
+                           forward->forwardall = 0;
+                           inet_ntop(AF_INET6, &(start->addr.in6.sin6_addr), strprn, 64);
+                           my_syslog(LOG_WARNING, _("            [%s]     port: 0x%x, family: %d"), strprn, start->addr.in6.sin6_port,start->addr.in6.sin6_family);
+                   }
+                   else
+                   {
+                           start = daemon->servers;
+                           forward->forwardall = 1;
+                           daemon->forwardcount_server4 = 0;
+                           daemon->forwardcount_server6 = 0;
+                           daemon->forwardtime = now;
+                           daemon->last_good_serverv4 = NULL;
+                           daemon->last_good_serverv6 = NULL;
+                           //my_syslog(LOG_ERR, _("### XDNS # - inside elseif - else again type:%d, daemon->forwardcount_server4:%d, daemon->forwardcount_server6:%d, now:%d, daemon->forwardtime:%d, difftime(now, daemon->forwardtime):%0.2f "), type, daemon->forwardcount_server4, daemon->forwardcount_server6, now, daemon->forwardtime, difftime(now, daemon->forwardtime));
+                   }
+              }
+              else
+              {
+                      start = daemon->servers;
+                      forward->forwardall = 1;
+                      daemon->forwardcount_server4 = 0;
+                      daemon->forwardcount_server6 = 0;
+                      daemon->forwardtime = now;
+                      daemon->last_good_serverv4 = NULL;
+                      daemon->last_good_serverv6 = NULL;
+                      //my_syslog(LOG_ERR, _("### XDNS # - inside else type:%d, daemon->forwardcount_server4:%d, daemon->forwardcount_server6:%d, now:%d, daemon->forwardtime:%d, difftime(now, daemon->forwardtime):%0.2f "), type, daemon->forwardcount_server4, daemon->forwardcount_server6, now, daemon->forwardtime, difftime(now, daemon->forwardtime));
+              }
+          }
+          else
+          {
+              //my_syslog(LOG_ERR, _("### XDNS # - inside else case of (type == 0) type:%d daemon->forwardcount_server4:%d, daemon->forwardcount_server6:%d, now:%d, daemon->forwardtime:%d, difftime(now, daemon->forwardtime):%0.2f "), type, daemon->forwardcount, daemon->forwardcount_server4, daemon->forwardcount_server6, now, daemon->forwardtime, difftime(now, daemon->forwardtime));
+              start = daemon->servers;
+              if (!option_bool(OPT_ORDER))
+                      forward->forwardall = 1;
+          }
+          firstsentto = start;
       }
 
 #ifdef HAVE_DNSSEC
@@ -1350,7 +1417,39 @@ void reply_query(int fd, time_t now)
      the same local socket, and would like to know which one has answered. */
   for (c = first; c != last; c++)
     if (sockaddr_isequal(&daemon->serverarray[c]->addr, &serveraddr))
-      break;
+	    if (server->addr.sa.sa_family == AF_INET)
+	    {
+		    //my_syslog(LOG_WARNING, "updated last_good_serverv4 %s", "");
+		    daemon->last_good_serverv4 = server;
+
+                   struct sockaddr_in* addr = (struct sockaddr_in*)&server->addr;
+                   char ip[INET_ADDRSTRLEN];
+
+                   inet_ntop(AF_INET, &(addr->sin_addr), ip, INET_ADDRSTRLEN);
+                   //my_syslog(LOG_WARNING, "Server IP: %s\n", ip);
+
+                   memset(ip, 0, sizeof(ip));
+
+                   inet_ntop(AF_INET, &(addr->sin_addr), ip, INET_ADDRSTRLEN);
+                   //my_syslog(LOG_WARNING, "daemon->last_good_serverv4 IP: %s\n", ip);
+               }
+               else if(server->addr.sa.sa_family == AF_INET6)
+               {
+                   //my_syslog(LOG_WARNING, "updated last_good_serverv6 %s", "");
+                   daemon->last_good_serverv6 = server;
+
+                   struct sockaddr_in6* addr = (struct sockaddr_in6*)&server->addr;
+                   char ip6[INET6_ADDRSTRLEN];
+
+                   inet_ntop(AF_INET6, &(addr->sin6_addr), ip6, INET6_ADDRSTRLEN);
+                   //my_syslog(LOG_WARNING, "Server IP: %s\n", ip6);
+
+                   memset(ip6, 0, sizeof(ip6));
+
+                   inet_ntop(AF_INET6, &(addr->sin6_addr), ip6, INET6_ADDRSTRLEN);
+                   //my_syslog(LOG_WARNING, "daemon->last_good_serverv6 IP: %s\n", ip6);
+               }
+  break;
   
   if (c == last)
     return;
