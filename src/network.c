@@ -2174,10 +2174,25 @@ int reload_servers(char *fname)
     {
       union mysockaddr addr, source_addr;
       char *token = strtok(line, " \t\n\r");
+      char *ProfileEnable;
       //my_syslog(LOG_ERR, _("### XDNS ### token : \"%s\""), token);
       
       if (!token)
 	continue;
+
+      if(!strcmp(token, "XDNS_Multi_Profile"))
+      {
+        ProfileEnable = strtok(NULL, " \t\n\r");
+        if(!strcmp(ProfileEnable, "Enabled"))
+        {
+          daemon->XDNS_MultiProfile_Flag=1;
+        }
+        else
+        {
+          daemon->XDNS_MultiProfile_Flag=0;
+        }
+      }
+
       if (strcmp(token, "nameserver") != 0 && strcmp(token, "server") != 0 && strcmp(token, "dnsoverride") != 0)
 	continue;
       /***************** <XDNS> case dnsoverride **********************/

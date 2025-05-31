@@ -1206,6 +1206,7 @@ extern struct daemon {
   struct server *servers, *servers_tail, *local_domains, **serverarray;
   struct server *dns_override_server; /* for XDNS */
   struct server *dns_override_server2; /* for Secondary XDNS */
+  int XDNS_MultiProfile_Flag; /*Flag determines Multi-profiling Enabled(1)/Disabled(0) for XDNS*/
   int protected_browsing_enable;
   int use_xdns_refactor_code;
   struct server_lists *xdns_server_lists; /*level of XDNS services list*/

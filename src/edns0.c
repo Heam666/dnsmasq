@@ -310,6 +310,30 @@ static size_t add_cpe_tag(struct dns_header *header, size_t plen, unsigned char 
 }
 //</XDNS>
 
+static size_t add_multiprofile_option(struct dns_header *header, size_t plen, unsigned char *limit, union mysockaddr *l3, time_t now)
+{
+   unsigned char mac[DHCP_CHADDR_MAX] = {0};
+   unsigned char strmac[DHCP_STR_MAC_MAX] = {0};
+   int strsize=0;
+   int maclen = 0;
+   if ((maclen = find_mac(l3, mac, 1, now)) != 0)
+   {
+        print_mac(strmac, mac, maclen);
+        my_syslog(LOG_WARNING, _("#### XDNS add_multiprofile_option() strmac:%s"),strmac);
+        plen = add_pseudoheader(header, plen, limit, PACKETSZ, EDNS0_OPTION_NOMDEVICEID, strmac,DHCP_STR_MAC_MAX, 0, 0);
+
+   }
+   else
+   {
+        my_syslog(LOG_WARNING, _("#### XDNS add_multiprofile_option() Could not find MAC from l3 sockaddr !!!"));
+        reset_option_dnsoverride();
+   }
+
+   return plen;
+}
+
+
+
 /* OPT_ADD_MAC = MAC is added (if available)
    OPT_ADD_MAC + OPT_STRIP_MAC = MAC is replaced, if not available, it is only removed
    OPT_STRIP_MAC = MAC is removed */
@@ -795,7 +819,11 @@ size_t add_edns0_config(struct dns_header *header, size_t plen, unsigned char *l
   
   plen  = add_mac(header, plen, limit, source, now, cacheable);
   plen = add_dns_client(header, plen, limit, source, now, cacheable);
-  
+ 
+   /* <XDNS Multiprofile> */
+  if(daemon->XDNS_MultiProfile_Flag)
+	  plen=add_multiprofile_option(header, plen, limit, source, now);
+ 
   /* <XDNS> */
   plen = add_xdns_server(header, plen, limit, source, now);
 

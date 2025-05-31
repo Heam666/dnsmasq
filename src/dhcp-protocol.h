@@ -92,6 +92,7 @@
 
 #define DHCP_CHADDR_MAX 16
 
+#define DHCP_STR_MAC_MAX 17
 struct dhcp_packet {
   u8 op, htype, hlen, hops;
   u32 xid;
