@@ -557,6 +557,7 @@ struct dnsoverride_record {
 #ifdef HAVE_IPV6
   union all_addr dnsaddr6;
 #endif
+  int list_tag;
   //int family;
   struct dnsoverride_record *next;
 };
@@ -651,6 +652,12 @@ struct serv_local {
 struct rebind_domain {
   char *domain;
   struct rebind_domain *next;
+};
+
+struct server_lists {
+  struct server* level_list;
+  int level_tag;
+  struct server_lists* next;
 };
 
 struct ipsets {
@@ -1200,6 +1207,12 @@ extern struct daemon {
   struct server *dns_override_server; /* for XDNS */
   struct server *dns_override_server2; /* for Secondary XDNS */
   int protected_browsing_enable;
+  int use_xdns_refactor_code;
+  struct server_lists *xdns_server_lists; /*level of XDNS services list*/
+  int xdns_server_lists_count;
+  int xdns_default_list_no;
+  int xdns_forward_list_no;
+  int ip_type;
   struct rebind_domain *no_rebind;
   int server_has_wildcard;
   int serverarraysz, serverarrayhwm;
@@ -1903,6 +1916,7 @@ struct dnsoverride_record* get_dnsoverride_record(char* macaddr);
 struct dnsoverride_record* get_dnsoverride_defaultrecord();
 int find_dnsoverride_server(char* macaddr, union all_addr* serv, int iptype,int count);
 int find_dnsoverride_defaultserver(union all_addr* serv1,union all_addr* serv2, int iptype,int* primary);
+int find_mac_tag(char* macaddr);
 int do_arp_script_run(void);
 
 /* dump.c */

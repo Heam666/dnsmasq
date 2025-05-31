@@ -192,7 +192,8 @@ struct myoption {
 #define LOPT_NO_DHCP4      383
 #define LOPT_MAX_PROCS     384
 #define LOPT_DNSSEC_LIMITS 385
-#define LOPT_DNSOVERRIDE   362
+#define LOPT_DNSOVERRIDE   386
+#define LOPT_REFAC_CODE    387
 
 #ifdef HAVE_GETOPT_LONG
 static const struct option opts[] =  
@@ -337,6 +338,7 @@ static const struct myoption opts[] =
     { "dhcp-generate-names", 2, 0, LOPT_GEN_NAMES },
     { "rebind-localhost-ok", 0, 0,  LOPT_LOC_REBND },
     { "add-mac", 2, 0, LOPT_ADD_MAC },
+    { "xdns-refac-code", 2, 0, LOPT_REFAC_CODE },
     { "strip-mac", 0, 0, LOPT_STRIP_MAC },
     { "add-subnet", 2, 0, LOPT_ADD_SBNET },
     { "strip-subnet", 0, 0, LOPT_STRIP_SBNET },
@@ -2834,6 +2836,10 @@ static int one_opt(int option, char *arg, char *errstr, char *gen_err, int comma
 	  else
 	    ret_err(gen_err);
 	}
+      break;
+
+    case LOPT_REFAC_CODE:
+      daemon->use_xdns_refactor_code = 1;
       break;
 
     case 'u':  /* --user */

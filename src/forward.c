@@ -183,6 +183,9 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
   int old_src = 0, old_reply = 0;
   int first, last, start = 0;
   int cacheable, forwarded = 0;
+  struct server *firstsentto = NULL;
+  if(!daemon->use_xdns_refactor_code)
+	  firstsentto = start;
   size_t edns0_len;
   unsigned char *pheader;
   int ede = EDE_UNSET;
@@ -482,6 +485,26 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
 	    PUTSHORT(SAFE_PKTSZ, pheader);
 	}
     }
+        if(daemon->use_xdns_refactor_code)
+      {
+          my_syslog(LOG_INFO, _("#### XDNS - List of nameservers: "));
+          struct server *indx;
+          for (indx = daemon->servers; indx; indx = indx->next)
+          {
+            char strprn[64] = {0}; memset(strprn, 0, 64);
+            if(indx->addr.sa.sa_family == AF_INET)
+            {
+               inet_ntop(AF_INET, &(indx->addr.in.sin_addr), strprn, 64);
+               my_syslog(LOG_INFO, _("            [%s]     port: 0x%x, family: %d"), strprn, indx->addr.in.sin_port, indx->addr.in.sin_family);
+            }
+            else if(indx->addr.sa.sa_family == AF_INET6)
+            {
+               inet_ntop(AF_INET6, &(indx->addr.in6.sin6_addr), strprn, 64);
+               my_syslog(LOG_INFO, _("            [%s]     port: 0x%x, family: %d"), strprn, indx->addr.in6.sin6_port,indx->addr.in6.sin6_family);
+            }
+         }
+         my_syslog(LOG_INFO, _("#### XDNS - DNS request is ip_type:%d"),daemon->ip_type);
+      }
   
   if (forward->forwardall)
     start = first;
@@ -494,9 +517,25 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
 
   int primaryxdns=0;
   while (1)
-    { 
+    {
+	    if((daemon->use_xdns_refactor_code) && (daemon->ip_type == 4 && start->addr.sa.sa_family != AF_INET) || (daemon->ip_type == 6 && start->addr.sa.sa_family != AF_INET6))
+	    {
+		    if(start->next == NULL){
+			    break;
+		    }
+		    else
+		    {
+			    start = start->next;
+			    continue;
+		    }
+	    }
       int fd;
       // < XDNS for IPv6>
+      if(daemon->use_xdns_refactor_code)
+      {
+	      daemon->dns_override_server = start;
+      }
+      
       if(option_bool(OPT_DNS_OVERRIDE) && daemon->dns_override_server)
       {
 	      my_syslog(LOG_INFO, _("#### XDNS - finding server socket to use based on dns_override_server family "));
@@ -550,6 +589,8 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
 		PUTSHORT(srv->edns_pktsz, pheader);
 	    }
 #endif
+	  if(!daemon->use_xdns_refactor_code)
+	  {
 	  //<XDNS>
                        //=====
                  //my_syslog(LOG_INFO, _("#### XDNS - List of nameservers: "));
@@ -624,7 +665,8 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
                        else
                        {
                          //my_syslog(LOG_WARNING, _("#### XDNS - Did not modify upstream addr!"));
-                       }
+		       }
+	  }
                  // Print where udp send is sending to:
                  char strprn[64] = {0}; memset(strprn, 0, 64);
                  if(srv->addr.sa.sa_family == AF_INET)
@@ -681,14 +723,17 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
 	      srv->queries++;
 	      forwarded = 1;
 	      forward->sentto = srv;
-		  if(!primaryxdns)
-		  {
-			primaryxdns= 1;
-		}
-		else
-		{
-			primaryxdns=0;
-		}
+	      if(!daemon->use_xdns_refactor_code)
+	      {
+		      if(!primaryxdns)
+		      {
+			      primaryxdns= 1;
+		      }
+		      else
+		      {
+			      primaryxdns=0;
+		      }
+	      }
 
 	      if (!forward->forwardall) 
 		break;
@@ -877,6 +922,26 @@ static size_t process_reply(struct dns_header *header, time_t now, struct server
 		  sizep -= 2;
 		  PUTSHORT(daemon->edns_pktsz, sizep);
 		}
+
+      if(daemon->use_xdns_refactor_code)
+      {
+          struct server_lists *temp_server_lists = daemon->xdns_server_lists;
+          while(temp_server_lists != NULL)
+          {
+                //my_syslog(LOG_ERR, _("### XDNS # forward.c temp_server_lists->level_tag :\"%d\",daemon->xdns_forward_list_no:\"%d\""), temp_server_lists->level_tag,daemon->xdns_forward_list_no);
+                if(temp_server_lists->level_tag == daemon->xdns_forward_list_no)
+                {
+                        daemon->servers=temp_server_lists->level_list;
+                        break;
+                }
+                temp_server_lists=temp_server_lists->next;
+
+          }
+        start = daemon->servers;
+        firstsentto = start;
+        //forward->forwardall = 1;
+
+      }
 
 #ifdef HAVE_DNSSEC
 	      /* If the client didn't set the do bit, but we did, reset it. */

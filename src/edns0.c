@@ -368,6 +368,52 @@ static size_t add_xdns_server(struct dns_header *header, size_t plen, unsigned c
    int maclen = 0;
    unsigned char mac[DHCP_CHADDR_MAX];
 
+   if(daemon->use_xdns_refactor_code)
+   {
+       // find mac from socket addr
+     if ((maclen = find_mac(l3, mac, 1, now)) != 0)
+     {
+       // get mac in string format
+       char strmac[REC_ADDR_MAX] = {0};
+       memset(strmac, 0, REC_ADDR_MAX);
+       print_mac(strmac, mac, maclen);
+
+               my_syslog(LOG_INFO, _("### XDNS - add_xdns_server() for mac [%s]"), strmac);
+
+               // find family type from socket addr
+               daemon->ip_type = 4;
+               if(l3->sa.sa_family == AF_INET)
+               {
+                       daemon->ip_type = 4;
+               }
+#ifdef HAVE_IPV6
+               else if(l3->sa.sa_family == AF_INET6)
+               {
+                       daemon->ip_type = 6;
+               }
+#endif
+
+                daemon->xdns_forward_list_no=find_mac_tag(strmac);
+                if(daemon->xdns_forward_list_no == -1)
+                        daemon->xdns_forward_list_no=daemon->xdns_default_list_no;
+
+
+        my_syslog(LOG_INFO, _("### XDNS- add_xdns_server() for mac [%s] send list tag is:\"%d\""), strmac,daemon->xdns_forward_list_no);
+
+
+                   // Trigger overriding of upstream server
+                   set_option_dnsoverride();
+    }
+        else
+        {
+                daemon->xdns_forward_list_no=daemon->xdns_default_list_no;
+                reset_option_dnsoverride();
+                my_syslog(LOG_INFO, _("#### XDNS : could not find MAC from l3 sockaddr so default fprward list is:\"%d\" !"),daemon->xdns_forward_list_no);
+        }
+
+   }
+   else
+   {
        // find mac from socket addr
    if ((maclen = find_mac(l3, mac, 1, now)) != 0)
    {
@@ -506,6 +552,7 @@ static size_t add_xdns_server(struct dns_header *header, size_t plen, unsigned c
                reset_option_dnsoverride();
 	       my_syslog(LOG_INFO, _("#### XDNS : could not find MAC from l3 sockaddr !"));
        }
+   }
 
        return plen;
 }

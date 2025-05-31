@@ -366,6 +366,31 @@ int find_dnsoverride_defaultserver(union all_addr* serv1,union all_addr* serv2, 
 	return retval;
 }
 
+int find_mac_tag(char* macaddr)
+{
+       if(!macaddr)
+       {
+               my_syslog(LOG_INFO, _("#### XDNS : find_mac_tag() Error Param!!"));
+               return -1; //fail
+       }
+
+       //my_syslog(LOG_WARNING, _("#### XDNS : find_dnsoverride_server(%s)"), macaddr);
+
+       struct dnsoverride_record *p = dnsrecs;
+       while(p)
+       {
+               if(strcmp(p->macaddr, macaddr) == 0)
+               {
+                                return p->list_tag; //success
+               }
+                p = p->next;
+       }
+
+       my_syslog(LOG_INFO, _("#### XDNS : find_mac_tag(%s) list tag not found!"), macaddr);
+
+       return -1; // not found
+}
+
 /* </XDNS> */
 
 
