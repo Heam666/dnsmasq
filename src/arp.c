@@ -283,7 +283,7 @@ struct dnsoverride_record* get_dnsoverride_defaultrecord()
 
 
 /* find dns server address for given mac in dnsrecs */
-int find_dnsoverride_server(char* macaddr, union all_addr* serv, int iptype)
+int find_dnsoverride_server(char* macaddr, union all_addr* serv, int iptype,int count)
 {
        if(!macaddr || !serv)
        {
@@ -297,7 +297,7 @@ int find_dnsoverride_server(char* macaddr, union all_addr* serv, int iptype)
        struct dnsoverride_record *p = dnsrecs;
        while(p)
        {
-               if(strcmp(p->macaddr, macaddr) == 0)
+               if(strcmp(p->macaddr, macaddr) == 0 && count==0)
                {
                        //found
                        if(iptype == 4)
@@ -321,6 +321,10 @@ int find_dnsoverride_server(char* macaddr, union all_addr* serv, int iptype)
                        return 1; //success
 
                }
+
+	       if(strcmp(p->macaddr, macaddr) == 0 && count==1){      //for secondary XDNS
+			count--;
+		}
                p = p->next;
        }
        //unlock
@@ -330,16 +334,31 @@ int find_dnsoverride_server(char* macaddr, union all_addr* serv, int iptype)
        return 0; // not found
 }
 
-/* find default server address. Default is indicated by mac addr "00:00:00:00:00:00" TODO: Needs protection */
-int find_dnsoverride_defaultserver(union all_addr* serv, int iptype)
+/* find default(primary and secondary) server address. Default is indicated by mac addr "00:00:00:00:00:00" TODO: Needs protection */
+int find_dnsoverride_defaultserver(union all_addr* serv1,union all_addr* serv2, int iptype,int* primary)
 {
-       if(!serv)
+       int retval;
+       if(!serv1)
        {
-               my_syslog(LOG_WARNING, _("#### XDNS : find_dnsoverride_defaultserver(%x) Error Param!!"), serv);
+               my_syslog(LOG_WARNING, _("#### XDNS : find_dnsoverride_defaultserver(%x) Error Param!!"), serv1);
                return 0;
        }
 
-       return find_dnsoverride_server(XDNS_NULL_MAC, serv, iptype);
+       if(retval=find_dnsoverride_server(XDNS_NULL_MAC, serv1, iptype,0))                // For Primary Default server
+	{
+			*primary=1;
+		if(serv2)
+		{
+       			if(find_dnsoverride_server(XDNS_NULL_MAC, serv2, iptype,1))              // For secondary Default server
+				*primary=2;
+		}
+		else
+		{
+			my_syslog(LOG_WARNING, _("#### XDNS : find_dnsoverride_defaultserver(%x)secondary XDNS Error Param!!"), serv2);
+		}
+	}
+
+	return retval;
 }
 
 /* </XDNS> */

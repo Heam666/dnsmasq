@@ -176,6 +176,7 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
   unsigned int fwd_flags = 0;
   int is_dnssec = forward && (forward->flags & (FREC_DNSKEY_QUERY | FREC_DS_QUERY));
   struct server *master;
+  struct server *secondstart = NULL;	
   void *hash = hash_questions(header, plen, daemon->namebuff);
   unsigned int gotname = extract_request(header, plen, daemon->namebuff, NULL);
   unsigned char *oph = find_pseudoheader(header, plen, NULL, NULL, NULL, NULL);
@@ -491,6 +492,7 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
      if we fail to send to all nameservers, send back an error
      packet straight away (helps modem users when offline)  */
 
+  int primaryxdns=0;
   while (1)
     { 
       int fd;
@@ -567,32 +569,41 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
                                  //my_syslog(LOG_INFO, _("            [%s]     port: 0x%x family: %d"), strprn, indx->addr.in6.sin6_port, indx->addr.in6.sin6_family);
                          }
                  }
-
-
-                       if(option_bool(OPT_DNS_OVERRIDE) && daemon->dns_override_server)
+				 
+				 struct server *xdnsserver;
+				 if(!primaryxdns)
+				 {
+					xdnsserver=daemon->dns_override_server;
+				}
+				else
+				{
+					xdnsserver=daemon->dns_override_server2;
+				}
+				
+				if(option_bool(OPT_DNS_OVERRIDE) && xdnsserver)
                        {
                          char strprn[64] = {0};
-                         if(daemon->dns_override_server->addr.sa.sa_family == AF_INET)
+                         if(xdnsserver->addr.sa.sa_family == AF_INET)
                          {
                                  memset(strprn, 0, 64);
-                                 if(inet_ntop(AF_INET, &(daemon->dns_override_server->addr.in.sin_addr), strprn, 64))
+                                 if(inet_ntop(AF_INET, &(xdnsserver->addr.in.sin_addr), strprn, 64))
                                  {
                                          if(strprn[0] != 0 && strcmp(strprn, "0.0.0.0") != 0)
                                          {
-                                                 memcpy(&srv->addr.in.sin_addr, &daemon->dns_override_server->addr.in.sin_addr, sizeof(struct in_addr));
+                                                 memcpy(&srv->addr.in.sin_addr, &xdnsserver->addr.in.sin_addr, sizeof(struct in_addr));
                                                  srv->addr.in.sin_family = AF_INET;
                                                  //my_syslog(LOG_WARNING, _("#### XDNS - Overriding upstream address with IPv4 xDNS addr"));
                                          }
                                  }
                          }
-                         else if(daemon->dns_override_server->addr.sa.sa_family == AF_INET6)
+                         else if(xdnsserver->addr.sa.sa_family == AF_INET6)
                          {
                                  memset(strprn, 0, 64);
-                                 if(inet_ntop(AF_INET6, &(daemon->dns_override_server->addr.in6.sin6_addr), strprn, 64))
+                                 if(inet_ntop(AF_INET6, &(xdnsserver->addr.in6.sin6_addr), strprn, 64))
                                  {
                                          if(strprn[0] != 0 && strcmp(strprn, "::") != 0)
                                          {
-                                                 memcpy(&srv->addr.in6.sin6_addr, &daemon->dns_override_server->addr.in6.sin6_addr, sizeof(struct in6_addr));
+                                                 memcpy(&srv->addr.in6.sin6_addr, &xdnsserver->addr.in6.sin6_addr, sizeof(struct in6_addr));
                                                  srv->addr.in6.sin6_family = AF_INET6;
                                                  //my_syslog(LOG_WARNING, _("#### XDNS - Overriding upstream address with IPv6 xDNS addr"));
                                          }
@@ -610,16 +621,21 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
                  // Print where udp send is sending to:
                  char strprn[64] = {0}; memset(strprn, 0, 64);
                  if(srv->addr.sa.sa_family == AF_INET)
-                         inet_ntop(AF_INET, &(srv->addr.in.sin_addr), strprn, 64);
+				 {
+					inet_ntop(AF_INET, &(srv->addr.in.sin_addr), strprn, 64);
+				 }
                  else if(srv->addr.sa.sa_family == AF_INET6)
-                         inet_ntop(AF_INET6, &(srv->addr.in6.sin6_addr), strprn, 64);
-						 my_syslog(LOG_INFO, _("#### XDNS - sendto (%u, 0x%x, len = %d) to %s : %s)"),
-                                 fd,
-                                 (int)&srv->addr.sa,
-                                 sa_len(&srv->addr),
-                                 (srv->addr.sa.sa_family == AF_INET6)?"ipv6":"ipv4", strprn);
-
-                 //=====
+				 {
+					inet_ntop(AF_INET6, &(srv->addr.in6.sin6_addr), strprn, 64);
+				 }
+				 
+				 my_syslog(LOG_INFO, _("#### XDNS - sendto (%u, 0x%x, len = %d) to %s : %s)"),
+				 fd,
+				 (int)&srv->addr.sa,
+				 sa_len(&srv->addr),
+				 (srv->addr.sa.sa_family == AF_INET6)?"ipv6":"ipv4", strprn);
+				 
+				 //=====
                  // </XDNS>
 
 	  
@@ -658,6 +674,15 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
 	      srv->queries++;
 	      forwarded = 1;
 	      forward->sentto = srv;
+		  if(!primaryxdns)
+		  {
+			primaryxdns= 1;
+		}
+		else
+		{
+			primaryxdns=0;
+		}
+
 	      if (!forward->forwardall) 
 		break;
 	      forward->forwardall++;

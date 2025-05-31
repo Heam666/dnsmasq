@@ -1198,6 +1198,7 @@ extern struct daemon {
   struct bogus_addr *bogus_addr, *ignore_addr;
   struct server *servers, *servers_tail, *local_domains, **serverarray;
   struct server *dns_override_server; /* for XDNS */
+  struct server *dns_override_server2; /* for Secondary XDNS */
   struct rebind_domain *no_rebind;
   int server_has_wildcard;
   int serverarraysz, serverarrayhwm;
@@ -1899,8 +1900,8 @@ int find_mac(union mysockaddr *addr, unsigned char *mac, int lazy, time_t now);
 int update_dnsoverride_records(struct dnsoverride_record *precord);
 struct dnsoverride_record* get_dnsoverride_record(char* macaddr);
 struct dnsoverride_record* get_dnsoverride_defaultrecord();
-int find_dnsoverride_server(char* macaddr, union all_addr* serv, int iptype);
-int find_dnsoverride_defaultserver(union all_addr* serv, int iptype);
+int find_dnsoverride_server(char* macaddr, union all_addr* serv, int iptype,int count);
+int find_dnsoverride_defaultserver(union all_addr* serv1,union all_addr* serv2, int iptype,int* primary);
 int do_arp_script_run(void);
 
 /* dump.c */

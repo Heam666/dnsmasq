@@ -15,6 +15,7 @@
 */
 
 #include "dnsmasq.h"
+#define XDNS_NULL_MAC "00:00:00:00:00:00"
 
 unsigned char *find_pseudoheader(struct dns_header *header, size_t plen, size_t  *len, unsigned char **p, int *is_sign, int *is_last)
 {
@@ -392,21 +393,22 @@ static size_t add_xdns_server(struct dns_header *header, size_t plen, unsigned c
 
                // get appropriate ipv4 or ipv6 dnsoverride address using mac addr
                union all_addr dnsaddr;
+	       union all_addr secondarydnsaddr;
+               int primary=0;
                memset(&dnsaddr, 0, sizeof(union all_addr));
-
-               struct server *serv = NULL;
+               memset(&secondarydnsaddr, 0, sizeof(union all_addr));
 
                // if xdns addr for same iptype, if not found try for other iptype
                // then try the default.
-               if(!find_dnsoverride_server(strmac, &dnsaddr, iptype))
+               if(!find_dnsoverride_server(strmac, &dnsaddr, iptype,0))
                {
-                      if(find_dnsoverride_server(strmac, &dnsaddr, (iptype==4)?6:4))//try other type
+                      if(find_dnsoverride_server(strmac, &dnsaddr, (iptype==4)?6:4,0))//try other type
                       {
                              iptype = (iptype==4)?6:4;
                       }
-                      else if(!find_dnsoverride_defaultserver(&dnsaddr, iptype))
+                      else if(!find_dnsoverride_defaultserver(&dnsaddr,&secondarydnsaddr,iptype,&primary))
                       {
-                            if(find_dnsoverride_defaultserver(&dnsaddr, (iptype==4)?6:4))//try other type
+                            if(find_dnsoverride_defaultserver(&dnsaddr,&secondarydnsaddr, (iptype==4)?6:4,&primary))//try other type
                             {
                                    iptype = (iptype==4)?6:4;
                             }
@@ -419,7 +421,53 @@ static size_t add_xdns_server(struct dns_header *header, size_t plen, unsigned c
                       }
                }
                //else found xdns server to use.
+		if(primary==2)      // For secondary XDNS server
+		{
 
+			struct server *secondserv = NULL;
+			char string[64]={0};
+               		secondserv = daemon->dns_override_server2;
+               		if(!secondserv) // if first time, daemon->dns_override_server2 is NULL. Allocate
+               		{
+                      		secondserv = whine_malloc(sizeof (struct server)); //allocated once & reused. Not freed.
+                      		if(secondserv)
+                      		{
+                            		memset(secondserv, 0, sizeof(struct server));
+                     		}
+                      		daemon->dns_override_server2 = secondserv;
+              		}
+
+               		if(secondserv)
+               		{
+                       		if(iptype == 4)
+                       		{
+                               		my_syslog(LOG_WARNING, _("### XDNS - set secondary ipv4 dns_override_server entry in daemon"));
+                              		//serv->addr.in.sin_addr = secondarydnsaddr.addr4;
+                               		memcpy(&secondserv->addr.in.sin_addr, &secondarydnsaddr.addr4, sizeof(struct in_addr));
+                               		secondserv->addr.sa.sa_family = AF_INET;
+					inet_ntop(AF_INET, &(secondarydnsaddr.addr4), string, 64);
+					my_syslog(LOG_WARNING, _("### XDNS - set secondary ipv4 dns_override_server string:%s!"),string);
+                     		}
+#ifdef HAVE_IPV6
+                       		else if(iptype == 6)
+                       		{
+                               		my_syslog(LOG_WARNING, _("### XDNS - set secondary ipv6 dns_override_server entry in daemon"));
+                               		//serv->addr.in6.sin6_addr = secondarydnsaddr.addr6;
+                               		memcpy(&secondserv->addr.in6.sin6_addr, &secondarydnsaddr.addr6, sizeof(struct in6_addr));
+                               		secondserv->addr.sa.sa_family = AF_INET6;
+                                        inet_ntop(AF_INET6, &(secondarydnsaddr.addr6), string, 64);
+                                        my_syslog(LOG_WARNING, _("### XDNS - set secondary ipv6 dns_override_server string:%s!"),string);
+                       		}
+#endif
+               	 		}
+   		 	}
+			else
+			{
+				daemon->dns_override_server2=NULL;
+				my_syslog(LOG_WARNING, _("### XDNS - secondary XDNS server does not exist!"));
+			}
+
+	       struct server *serv = NULL;
                serv = daemon->dns_override_server;
                if(!serv) // if first time, daemon->dns_override_server is NULL. Allocate
                {

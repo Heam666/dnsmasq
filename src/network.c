@@ -1727,6 +1727,34 @@ void check_servers(int no_loop_check)
   build_server_array(); 
 }
 
+/*XDNS- prints the linked list containg Primary and secondary DNS servers*/
+void print_dnsoverride_servers(struct dnsoverride_record *pprec)
+{
+
+        struct dnsoverride_record* p= pprec;
+	int i=0;
+        while(p != NULL)
+        {
+		char ipv4add[64] = {0};
+		char ipv6add[64] = {0};
+		inet_ntop(AF_INET, &(p->dnsaddr4.addr4), ipv4add, 64);
+#ifdef HAVE_IPV6
+		inet_ntop(AF_INET6, &(p->dnsaddr6.addr6), ipv6add, 64);
+#endif
+       		my_syslog(LOG_ERR, _("### XDNS # macaddr[%d] : \"%s\""), i, p->macaddr);
+       		my_syslog(LOG_ERR, _("### XDNS # srvaddr4[%d] : \"%s\""), i, ipv4add);
+#ifdef HAVE_IPV6
+       		my_syslog(LOG_ERR, _("### XDNS # srvaddr6[%d] : \"%s\""), i, ipv6add);
+#endif
+
+     		my_syslog(LOG_ERR, _("### XDNS # cpetag[%d] : \"%s\""), i, p->cpetag);
+                p=p->next;
+		i++;
+
+        }
+
+}
+
 /* XDNS - Helper to create override server entries in record. Builds pprec list and returns the head. */
 static int create_dnsoverride_servers(struct dnsoverride_record **pprec, char* macaddr, char *srvaddr4, char *srvaddr6, char *cpetag)
 {
@@ -1755,6 +1783,7 @@ static int create_dnsoverride_servers(struct dnsoverride_record **pprec, char* m
 
        //create entry and attach to record. This entries are maintained in arp.c. Cleanup is done there.
        struct dnsoverride_record* entry = NULL;
+       struct dnsoverride_record* temp = NULL;
        if ((entry = whine_malloc(sizeof(struct dnsoverride_record))))
        {
                memset(entry, 0, sizeof(struct dnsoverride_record));
@@ -1785,9 +1814,15 @@ static int create_dnsoverride_servers(struct dnsoverride_record **pprec, char* m
                        strcpy(entry->cpetag, cpetag);
                }
 
-
-               entry->next = *pprec;
-               *pprec = entry;
+               entry->next = NULL;
+               if(*pprec == NULL)
+               {
+			*pprec = entry;
+	       }
+	       else
+	       {
+		       (*pprec)->next = (struct dnsoverride_record*)entry;
+	       }
        }
        return 1; //success
 }
@@ -1913,6 +1948,7 @@ int reload_servers(char *fname)
       gotone = 1;
     }
   /* XDNS - Call to update the records in arp dnsoverride records*/
+  print_dnsoverride_servers(prec);
   update_dnsoverride_records(prec);
 
   fclose(f);
