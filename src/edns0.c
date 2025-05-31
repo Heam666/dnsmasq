@@ -288,7 +288,7 @@ static size_t add_cpe_tag(struct dns_header *header, size_t plen, unsigned char 
                }
                else
                {
-                       my_syslog(LOG_WARNING, _("#### XDNS add_cpe_tag() Could not find cpetag for mac %s"), strmac);
+                       my_syslog(LOG_INFO, _("#### XDNS add_cpe_tag() Could not find cpetag for mac %s"), strmac);
                }
        }
 
@@ -301,11 +301,11 @@ static size_t add_cpe_tag(struct dns_header *header, size_t plen, unsigned char 
        // if no cpetag found return. Don't call add header.
        if(cpetag == NULL)
        {
-               my_syslog(LOG_WARNING, _("#### XDNS : no cpetag found in dnsmasq config"));
+               my_syslog(LOG_INFO, _("#### XDNS : no cpetag found in dnsmasq config"));
                return plen;
        }
 
-       my_syslog(LOG_WARNING, _("### XDNS - add cpe tag \'%s\' to edns0 header for mac [%s]"), cpetag, strmac);
+       my_syslog(LOG_INFO, _("### XDNS - add cpe tag \'%s\' to edns0 header for mac [%s]"), cpetag, strmac);
        return add_pseudoheader(header, plen, limit, PACKETSZ, EDNS0_OPTION_NOMCPEID, cpetag, strlen(cpetag), 0, 1);
 }
 //</XDNS>
@@ -414,7 +414,7 @@ static size_t add_xdns_server(struct dns_header *header, size_t plen, unsigned c
                             }
                             else
                             {
-                                   my_syslog(LOG_WARNING, _("#### XDNS : add_xdns_server() Could't find xdns server for [%s] or the default server!"), strmac);
+                                   my_syslog(LOG_INFO, _("#### XDNS : add_xdns_server() Could't find xdns server for [%s] or the default server!"), strmac);
                                    reset_option_dnsoverride();
                                    return plen;
                             }
@@ -441,22 +441,22 @@ static size_t add_xdns_server(struct dns_header *header, size_t plen, unsigned c
                		{
                        		if(iptype == 4)
                        		{
-                               		my_syslog(LOG_WARNING, _("### XDNS - set secondary ipv4 dns_override_server entry in daemon"));
+                               		my_syslog(LOG_INFO, _("### XDNS - set secondary ipv4 dns_override_server entry in daemon"));
                               		//serv->addr.in.sin_addr = secondarydnsaddr.addr4;
                                		memcpy(&secondserv->addr.in.sin_addr, &secondarydnsaddr.addr4, sizeof(struct in_addr));
                                		secondserv->addr.sa.sa_family = AF_INET;
 					inet_ntop(AF_INET, &(secondarydnsaddr.addr4), string, 64);
-					my_syslog(LOG_WARNING, _("### XDNS - set secondary ipv4 dns_override_server string:%s!"),string);
+					my_syslog(LOG_INFO, _("### XDNS - set secondary ipv4 dns_override_server string:%s!"),string);
                      		}
 #ifdef HAVE_IPV6
                        		else if(iptype == 6)
                        		{
-                               		my_syslog(LOG_WARNING, _("### XDNS - set secondary ipv6 dns_override_server entry in daemon"));
+                               		my_syslog(LOG_INFO, _("### XDNS - set secondary ipv6 dns_override_server entry in daemon"));
                                		//serv->addr.in6.sin6_addr = secondarydnsaddr.addr6;
                                		memcpy(&secondserv->addr.in6.sin6_addr, &secondarydnsaddr.addr6, sizeof(struct in6_addr));
                                		secondserv->addr.sa.sa_family = AF_INET6;
                                         inet_ntop(AF_INET6, &(secondarydnsaddr.addr6), string, 64);
-                                        my_syslog(LOG_WARNING, _("### XDNS - set secondary ipv6 dns_override_server string:%s!"),string);
+                                        my_syslog(LOG_INFO, _("### XDNS - set secondary ipv6 dns_override_server string:%s!"),string);
                        		}
 #endif
                	 		}
@@ -464,7 +464,7 @@ static size_t add_xdns_server(struct dns_header *header, size_t plen, unsigned c
 			else
 			{
 				daemon->dns_override_server2=NULL;
-				my_syslog(LOG_WARNING, _("### XDNS - secondary XDNS server does not exist!"));
+				my_syslog(LOG_INFO, _("### XDNS - secondary XDNS server does not exist!"));
 			}
 
 	       struct server *serv = NULL;
@@ -483,7 +483,7 @@ static size_t add_xdns_server(struct dns_header *header, size_t plen, unsigned c
                {
                        if(iptype == 4)
                        {
-                               my_syslog(LOG_WARNING, _("### XDNS - set ipv4 dns_override_server entry in daemon"));
+                               my_syslog(LOG_INFO, _("### XDNS - set ipv4 dns_override_server entry in daemon"));
                               //serv->addr.in.sin_addr = dnsaddr.addr4;
                                memcpy(&serv->addr.in.sin_addr, &dnsaddr.addr4, sizeof(struct in_addr));
                                serv->addr.sa.sa_family = AF_INET;
@@ -491,7 +491,7 @@ static size_t add_xdns_server(struct dns_header *header, size_t plen, unsigned c
 #ifdef HAVE_IPV6
                        else if(iptype == 6)
                        {
-                               my_syslog(LOG_WARNING, _("### XDNS - set ipv6 dns_override_server entry in daemon"));
+                               my_syslog(LOG_INFO, _("### XDNS - set ipv6 dns_override_server entry in daemon"));
                                //serv->addr.in6.sin6_addr = dnsaddr.addr6;
                                memcpy(&serv->addr.in6.sin6_addr, &dnsaddr.addr6, sizeof(struct in6_addr));
                                serv->addr.sa.sa_family = AF_INET6;
@@ -504,7 +504,7 @@ static size_t add_xdns_server(struct dns_header *header, size_t plen, unsigned c
        else
        {
                reset_option_dnsoverride();
-               my_syslog(LOG_WARNING, _("#### XDNS : could not find MAC from l3 sockaddr !"));
+	       my_syslog(LOG_INFO, _("#### XDNS : could not find MAC from l3 sockaddr !"));
        }
 
        return plen;
@@ -516,7 +516,7 @@ static size_t add_xdns_server(struct dns_header *header, size_t plen, unsigned c
 static size_t add_mac(struct dns_header *header, size_t plen, unsigned char *limit,
 		      union mysockaddr *l3, time_t now, int *cacheablep)
 {
-  my_syslog(LOG_WARNING, _("#### XDNS : add_mac() called"));
+  my_syslog(LOG_INFO, _("#### XDNS : add_mac() called"));
   int maclen = 0, replace = 0;
   unsigned char mac[DHCP_CHADDR_MAX];
     
@@ -533,7 +533,7 @@ static size_t add_mac(struct dns_header *header, size_t plen, unsigned char *lim
     plen = add_pseudoheader(header, plen, limit, PACKETSZ, EDNS0_OPTION_MAC, mac, maclen, 0, replace);
   else
   {
-	  my_syslog(LOG_WARNING, _("#### XDNS : add_mac() maclen = 0 !!"));
+	  my_syslog(LOG_INFO, _("#### XDNS : add_mac() maclen = 0 !!"));
 	  reset_option_dnsoverride();
   }
 

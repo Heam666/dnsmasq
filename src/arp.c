@@ -228,7 +228,7 @@ struct dnsoverride_record* get_dnsoverride_record(char* macaddr)
 {
        if(!macaddr)
        {
-               my_syslog(LOG_WARNING, _("#### XDNS : get_dnsoverride_record(%s) Error Param!!"), macaddr);
+               my_syslog(LOG_INFO, _("#### XDNS : get_dnsoverride_record(%s) Error Param!!"), macaddr);
                return NULL;
        }
 
@@ -250,7 +250,7 @@ struct dnsoverride_record* get_dnsoverride_record(char* macaddr)
 
        if(!p)
        {
-               my_syslog(LOG_WARNING, _("#### XDNS : get_dnsoverride_record(%s) Not found!"), macaddr);
+               my_syslog(LOG_INFO, _("#### XDNS : get_dnsoverride_record(%s) Not found!"), macaddr);
        }
 
        return p;
@@ -266,7 +266,7 @@ struct dnsoverride_record* get_dnsoverride_defaultrecord()
                if(strcmp(p->macaddr, XDNS_NULL_MAC) == 0)
                {
                        //found
-                       my_syslog(LOG_WARNING, _("#### XDNS : found default rec"));
+                       my_syslog(LOG_INFO, _("#### XDNS : found default rec"));
                        break;
                }
                p = p->next;
@@ -275,7 +275,7 @@ struct dnsoverride_record* get_dnsoverride_defaultrecord()
 
        if(!p)
        {
-               my_syslog(LOG_WARNING, _("#### XDNS : get_dnsoverride_defaultrecord() Not found!"));
+               my_syslog(LOG_INFO, _("#### XDNS : get_dnsoverride_defaultrecord() Not found!"));
        }
 
        return p;
@@ -287,7 +287,7 @@ int find_dnsoverride_server(char* macaddr, union all_addr* serv, int iptype,int 
 {
        if(!macaddr || !serv)
        {
-               my_syslog(LOG_WARNING, _("#### XDNS : find_dnsoverride_server() Error Param!!"));
+               my_syslog(LOG_INFO, _("#### XDNS : find_dnsoverride_server() Error Param!!"));
                return 0; //fail
        }
 
@@ -303,18 +303,18 @@ int find_dnsoverride_server(char* macaddr, union all_addr* serv, int iptype,int 
                        if(iptype == 4)
                        {
                                memcpy(serv, &p->dnsaddr4, sizeof(union all_addr));
-                               my_syslog(LOG_WARNING, _("#### XDNS : found ipv4 server"));
+                               my_syslog(LOG_INFO, _("#### XDNS : found ipv4 server"));
                        }
 #ifdef HAVE_IPV6
                        else if(iptype == 6)
                        {
                                memcpy(serv, &p->dnsaddr6, sizeof(union all_addr));
-                               my_syslog(LOG_WARNING, _("#### XDNS : found ipv6 server"));
+                               my_syslog(LOG_INFO, _("#### XDNS : found ipv6 server"));
                        }
 #endif
                        else
                        {
-                               my_syslog(LOG_WARNING, _("#### XDNS : find_dnsoverride_server() Error Param! invalid iptype: %d !"), iptype);
+                               my_syslog(LOG_INFO, _("#### XDNS : find_dnsoverride_server() Error Param! invalid iptype: %d !"), iptype);
                                return 0; // fail
                        }
 
@@ -334,7 +334,7 @@ int find_dnsoverride_server(char* macaddr, union all_addr* serv, int iptype,int 
        }
        //unlock
 
-       my_syslog(LOG_WARNING, _("#### XDNS : find_dnsoverride_server(%s) override dns server not found!"), macaddr);
+       my_syslog(LOG_INFO, _("#### XDNS : find_dnsoverride_server(%s) override dns server not found!"), macaddr);
 
        return 0; // not found
 }
@@ -345,7 +345,7 @@ int find_dnsoverride_defaultserver(union all_addr* serv1,union all_addr* serv2, 
        int retval;
        if(!serv1)
        {
-               my_syslog(LOG_WARNING, _("#### XDNS : find_dnsoverride_defaultserver(%x) Error Param!!"), serv1);
+               my_syslog(LOG_INFO, _("#### XDNS : find_dnsoverride_defaultserver(%x) Error Param!!"), serv1);
                return 0;
        }
 
@@ -359,7 +359,7 @@ int find_dnsoverride_defaultserver(union all_addr* serv1,union all_addr* serv2, 
 		}
 		else
 		{
-			my_syslog(LOG_WARNING, _("#### XDNS : find_dnsoverride_defaultserver(%x)secondary XDNS Error Param!!"), serv2);
+			my_syslog(LOG_INFO, _("#### XDNS : find_dnsoverride_defaultserver(%x)secondary XDNS Error Param!!"), serv2);
 		}
 	}
 	daemon->protected_browsing_enable=0;       //Disabling Protected browsing Flag
