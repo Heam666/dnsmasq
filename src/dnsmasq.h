@@ -1199,6 +1199,7 @@ extern struct daemon {
   struct server *servers, *servers_tail, *local_domains, **serverarray;
   struct server *dns_override_server; /* for XDNS */
   struct server *dns_override_server2; /* for Secondary XDNS */
+  int protected_browsing_enable;
   struct rebind_domain *no_rebind;
   int server_has_wildcard;
   int serverarraysz, serverarrayhwm;

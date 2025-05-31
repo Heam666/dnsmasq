@@ -1821,7 +1821,12 @@ static int create_dnsoverride_servers(struct dnsoverride_record **pprec, char* m
 	       }
 	       else
 	       {
-		       (*pprec)->next = (struct dnsoverride_record*)entry;
+                       temp=*pprec;
+                       while(temp->next != NULL)
+                       {
+                               temp=temp->next;
+                       }
+		       temp->next = (struct dnsoverride_record*)entry;
 	       }
        }
        return 1; //success

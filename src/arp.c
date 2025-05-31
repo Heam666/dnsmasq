@@ -318,6 +318,11 @@ int find_dnsoverride_server(char* macaddr, union all_addr* serv, int iptype,int 
                                return 0; // fail
                        }
 
+                       if(strcmp(macaddr, XDNS_NULL_MAC) != 0)
+                       {
+                               daemon->protected_browsing_enable=1;   //Enabling Protected browsing Flag
+                       }
+
                        return 1; //success
 
                }
@@ -357,7 +362,7 @@ int find_dnsoverride_defaultserver(union all_addr* serv1,union all_addr* serv2, 
 			my_syslog(LOG_WARNING, _("#### XDNS : find_dnsoverride_defaultserver(%x)secondary XDNS Error Param!!"), serv2);
 		}
 	}
-
+	daemon->protected_browsing_enable=0;       //Disabling Protected browsing Flag
 	return retval;
 }
 

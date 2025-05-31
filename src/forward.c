@@ -577,11 +577,18 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
 				}
 				else
 				{
-					xdnsserver=daemon->dns_override_server2;
+					if(daemon->protected_browsing_enable || !daemon->dns_override_server2)
+					{
+						xdnsserver=daemon->dns_override_server;
+					}
+					else
+					{
+						xdnsserver=daemon->dns_override_server2;
+					}
 				}
 				
 				if(option_bool(OPT_DNS_OVERRIDE) && xdnsserver)
-                       {
+				{
                          char strprn[64] = {0};
                          if(xdnsserver->addr.sa.sa_family == AF_INET)
                          {
