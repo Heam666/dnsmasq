@@ -15,11 +15,41 @@
 */
 
 #include "dnsmasq.h"
+#include <mqueue.h>
 
 #ifdef HAVE_DHCP
 
 #define option_len(opt) ((int)(((unsigned char *)(opt))[1]))
 #define option_ptr(opt, i) ((void *)&(((unsigned char *)(opt))[2u+(unsigned int)(i)]))
+
+#define EVENT_QUEUE_NAME  "/dnsmasq_eventqueue"
+#define DNSMASQ_PRESENCE_QUEUE_NAME  "/presence_queue"
+#define MAX_SIZE    512
+#define MAX_SIZE_PRESENCE    512
+#define MSG_TYPE_DNSMASQ  6
+#define MSG_TYPE_DNS_PRESENCE 7
+
+#define CHECK(x) \
+    do { \
+        if (!(x)) { \
+            fprintf(stderr, "%s:%d: ", __func__, __LINE__); \
+            perror(#x); \
+            return; \
+        } \
+    } while (0) \
+
+
+typedef struct _EventQData
+{
+    char ip[64];
+    char enable[32];
+    char mac[32];
+    int MsgType;
+}DnsmasqEventQData;
+
+char src_ip[64];
+char presence_notify[32];
+int  unlink_status = 1;
 
 #ifdef HAVE_SCRIPT
 static void add_extradata_opt(struct dhcp_lease *lease, unsigned char *opt);
@@ -67,6 +97,113 @@ struct dhcp_boot *find_boot(struct dhcp_netid *netid);
 static int pxe_uefi_workaround(int pxe_arch, struct dhcp_netid *netid, struct dhcp_packet *mess, struct in_addr local, time_t now, int pxe);
 static void apply_delay(u32 xid, time_t recvtime, struct dhcp_netid *netid);
 static int is_pxe_client(struct dhcp_packet *mess, size_t sz, const char **pxe_vendor);
+
+int init_msgq_presence(struct daemon *pDmn)
+{
+    struct mq_attr attr;
+
+    if (!pDmn)
+        return -1;
+    /* initialize the queue attributes */
+    attr.mq_flags = 0;
+    attr.mq_maxmsg = 10;
+    attr.mq_msgsize = MAX_SIZE;
+    attr.mq_curmsgs = 0;
+
+    memset(src_ip,0,sizeof(src_ip));
+    memset(presence_notify,0,sizeof(presence_notify));
+
+    pDmn->presenceMq = mq_open(EVENT_QUEUE_NAME, O_CREAT | O_RDONLY | O_NONBLOCK, 0666, &attr);
+    my_syslog(LOG_WARNING, _("%s open msgq %d"),__FUNCTION__,pDmn->presenceMq);
+    if (pDmn->presenceMq < 0)
+        return -1;
+    return 0;
+}
+
+int receiveq_updatepresence_status(struct daemon *pDmn)
+{
+    char buffer[MAX_SIZE + 1];
+    ssize_t bytes_read = 0;
+    DnsmasqEventQData EventMsg= {0};
+
+    if(!pDmn)
+        return -1;
+ /* receive the message */
+    if (pDmn->presenceMq < 0)
+        return -1;
+    memset (buffer,0,sizeof(buffer));
+    bytes_read = mq_receive(pDmn->presenceMq, buffer, MAX_SIZE, NULL);
+
+    if (bytes_read > 0)
+    {
+       buffer[bytes_read] = '\0';
+       memset(&EventMsg,0,sizeof(DnsmasqEventQData));
+       memcpy(&EventMsg,buffer,sizeof(DnsmasqEventQData));
+
+       if(EventMsg.MsgType == MSG_TYPE_DNSMASQ)
+       {
+           strncpy(src_ip,EventMsg.ip,sizeof(EventMsg.ip));
+           strncpy(presence_notify,EventMsg.enable,sizeof(EventMsg.enable));
+       }
+    }
+
+    return 0;
+}
+
+void Sendmsg_DevicePresence(char *mac)
+{
+    DnsmasqEventQData EventMsg;
+    mqd_t mq;
+    struct mq_attr attr;
+    char buffer[MAX_SIZE_PRESENCE + 1];
+
+    /* initialize the queue attributes */
+    attr.mq_flags = 0;
+    attr.mq_maxmsg = 10;
+    attr.mq_msgsize = MAX_SIZE_PRESENCE;
+    attr.mq_curmsgs = 0;
+
+    /* create the message queue */
+    mq = mq_open(DNSMASQ_PRESENCE_QUEUE_NAME, O_CREAT | O_WRONLY | O_NONBLOCK, 0666, &attr);
+
+    if (mac)
+    my_syslog(LOG_WARNING, _("%s msg_q = %d errno %d mac = %s"),__FUNCTION__,mq,errno,mac);
+
+    CHECK((mqd_t)-1 != mq);
+    memset(buffer, 0, sizeof(buffer));
+    memset(&EventMsg, 0, sizeof(DnsmasqEventQData));
+    EventMsg.MsgType = MSG_TYPE_DNS_PRESENCE;
+
+    if (mac)
+    {
+        strcpy(EventMsg.mac,mac);
+    }
+    else
+    {
+        CHECK((mqd_t)-1 != mq_close(mq));
+        return;
+    }
+    memcpy(buffer,&EventMsg,sizeof(DnsmasqEventQData));
+    my_syslog(LOG_WARNING, _("%s msg_q sent mac %s"),__FUNCTION__,EventMsg.mac);
+    CHECK(0 <= mq_send(mq, buffer, MAX_SIZE_PRESENCE, 0));
+    CHECK((mqd_t)-1 != mq_close(mq));
+}
+
+static void notify_connection(char *client_mac)
+{
+    my_syslog(LOG_WARNING, _("msg_q received %s presence enable %s ip %s mac %s"),__FUNCTION__,presence_notify,src_ip,client_mac);
+    if (!strcmp(presence_notify,"false"))
+    {
+        if (!unlink_status)
+        {
+            mq_unlink(DNSMASQ_PRESENCE_QUEUE_NAME);
+        }
+        unlink_status = 1;
+        return;
+    }
+    unlink_status = 0;
+    Sendmsg_DevicePresence(client_mac);
+}
 
 size_t dhcp_reply(struct dhcp_context *context, char *iface_name, int int_index,
 		  size_t sz, time_t now, int unicast_dest, int loopback,
@@ -1529,6 +1666,8 @@ size_t dhcp_reply(struct dhcp_context *context, char *iface_name, int int_index,
 	  daemon->metrics[METRIC_DHCPACK]++;
 	  log_packet("DHCPACK", &mess->yiaddr, emac, emac_len, iface_name, hostname, NULL, mess->xid);  
 
+          notify_connection(print_mac(daemon->namebuff, emac, emac_len));
+
 	  clear_packet(mess, end);
 	  option_put(mess, end, OPTION_MESSAGE_TYPE, 1, DHCPACK);
 	  option_put(mess, end, OPTION_SERVER_IDENTIFIER, INADDRSZ, ntohl(server_id(context, override, fallback).s_addr));
@@ -1574,7 +1713,9 @@ size_t dhcp_reply(struct dhcp_context *context, char *iface_name, int int_index,
       
       daemon->metrics[METRIC_DHCPACK]++;
       log_packet("DHCPACK", &mess->ciaddr, emac, emac_len, iface_name, hostname, NULL, mess->xid);
-      
+     
+      notify_connection(print_mac(daemon->namebuff, emac, emac_len));
+ 
       if (lease)
 	{
 	  lease_set_interface(lease, int_index, now);

@@ -137,6 +137,7 @@ typedef unsigned long long u64;
 #ifndef HAVE_LINUX_NETWORK
 #  include <net/if_dl.h>
 #endif
+#include <mqueue.h>
 
 #if defined(HAVE_LINUX_NETWORK)
 #include <linux/version.h>
@@ -1355,7 +1356,7 @@ extern struct daemon {
   /* utility string buffer, hold max sized IP address as string */
   char *addrbuff;
   char *addrbuff2; /* only allocated when OPT_EXTRALOG */
-
+  mqd_t presenceMq; /* message queue for to detect presence of connected device*/
 #ifdef HAVE_DUMPFILE
   /* file for packet dumps. */
   int dumpfd;

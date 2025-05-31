@@ -1057,7 +1057,12 @@ int main (int argc, char **argv)
   /* Using inotify, have to select a resolv file at startup */
   poll_resolv(1, 0, now);
 #endif
-  
+ 
+#ifdef HAVE_DHCP
+  // monitoring ipv4 device presence feature
+  init_msgq_presence(daemon);
+#endif
+ 
   while (1)
     {
       int timeout = fast_retry(now);
@@ -1273,6 +1278,18 @@ int main (int argc, char **argv)
 #endif      
 
 #ifdef HAVE_DHCP
+      if (daemon->presenceMq != -1)
+      {
+          poll_listen(daemon->presenceMq, POLLIN);
+          my_syslog(LOG_WARNING, _("Poll listen presence mq"));
+      }
+      if ( daemon->presenceMq != -1)
+      {
+	      if (poll_check(daemon->presenceMq, POLLIN))
+	      {
+		      receiveq_updatepresence_status(daemon);
+	      }
+      }
       if (daemon->dhcp || daemon->relay4)
 	{
 	  if (poll_check(daemon->dhcpfd, POLLIN))
